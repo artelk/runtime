@@ -574,10 +574,8 @@ namespace System.Text.Json.Tests
             var output = new ArrayBufferWriter<byte>();
             var writer = new Utf8JsonWriter(output);
             WriteLargeArrayOfStrings(writer, 1_000);
-            Assert.Equal(17347, writer.BytesCommitted);
-            Assert.Equal(5544, writer.BytesPending);
+            Assert.Equal(writer.BytesCommitted, output.WrittenCount);
             Assert.Equal(0, writer.CurrentDepth);
-            Assert.Equal(17347, output.WrittenCount);
 
             writer.Dispose();
 
@@ -1069,9 +1067,6 @@ namespace System.Text.Json.Tests
             using var jsonUtf8 = new Utf8JsonWriter(output, options);
             jsonUtf8.WriteStartObject();
             jsonUtf8.WriteEndObject();
-            Assert.Equal(0, jsonUtf8.BytesCommitted);
-            Assert.Equal(2, jsonUtf8.BytesPending);
-            Assert.Equal(0, output.FormattedCount);
             jsonUtf8.Flush();
             Assert.Equal(2, jsonUtf8.BytesCommitted);
             Assert.Equal(0, jsonUtf8.BytesPending);
@@ -1111,9 +1106,6 @@ namespace System.Text.Json.Tests
             using var jsonUtf8 = new Utf8JsonWriter(output, options);
             jsonUtf8.WriteStartObject();
             jsonUtf8.WriteEndObject();
-            Assert.Equal(0, jsonUtf8.BytesCommitted);
-            Assert.Equal(2, jsonUtf8.BytesPending);
-            Assert.Equal(0, output.FormattedCount);
             await jsonUtf8.FlushAsync();
             Assert.Equal(2, jsonUtf8.BytesCommitted);
             Assert.Equal(0, jsonUtf8.BytesPending);
@@ -1153,8 +1145,6 @@ namespace System.Text.Json.Tests
             using var jsonUtf8 = new Utf8JsonWriter(output, options);
             jsonUtf8.WriteStartObject();
             jsonUtf8.WriteEndObject();
-            Assert.Equal(0, jsonUtf8.BytesCommitted);
-            Assert.Equal(0, output.FormattedCount);
             jsonUtf8.Dispose();
             Assert.Equal(0, jsonUtf8.BytesCommitted);
             Assert.Equal(2, output.FormattedCount);
@@ -1183,8 +1173,6 @@ namespace System.Text.Json.Tests
             using var jsonUtf8 = new Utf8JsonWriter(output, options);
             jsonUtf8.WriteStartObject();
             jsonUtf8.WriteEndObject();
-            Assert.Equal(0, jsonUtf8.BytesCommitted);
-            Assert.Equal(0, output.FormattedCount);
             await jsonUtf8.DisposeAsync();
             Assert.Equal(0, jsonUtf8.BytesCommitted);
             Assert.Equal(2, output.FormattedCount);
@@ -1212,9 +1200,6 @@ namespace System.Text.Json.Tests
 
             using var jsonUtf8 = new Utf8JsonWriter(output, options);
             jsonUtf8.WriteStartObject();
-            Assert.Equal(0, jsonUtf8.BytesCommitted);
-            Assert.Equal(1, jsonUtf8.BytesPending);
-            Assert.Equal(0, output.FormattedCount);
             jsonUtf8.Dispose();
             Assert.Equal(0, jsonUtf8.BytesCommitted);
             Assert.Equal(0, jsonUtf8.BytesPending);
@@ -1230,8 +1215,6 @@ namespace System.Text.Json.Tests
 
             using var writeToStream = new Utf8JsonWriter(stream, options);
             writeToStream.WriteStartObject();
-            Assert.Equal(0, writeToStream.BytesCommitted);
-            Assert.Equal(1, writeToStream.BytesPending);
             Assert.Equal(0, stream.Position);
             writeToStream.Dispose();
             Assert.Equal(0, writeToStream.BytesCommitted);
@@ -1258,9 +1241,6 @@ namespace System.Text.Json.Tests
 
             using var jsonUtf8 = new Utf8JsonWriter(output, options);
             jsonUtf8.WriteStartObject();
-            Assert.Equal(0, jsonUtf8.BytesCommitted);
-            Assert.Equal(1, jsonUtf8.BytesPending);
-            Assert.Equal(0, output.FormattedCount);
             await jsonUtf8.DisposeAsync();
             Assert.Equal(0, jsonUtf8.BytesCommitted);
             Assert.Equal(0, jsonUtf8.BytesPending);
@@ -1276,8 +1256,6 @@ namespace System.Text.Json.Tests
 
             using var writeToStream = new Utf8JsonWriter(stream, options);
             writeToStream.WriteStartObject();
-            Assert.Equal(0, writeToStream.BytesCommitted);
-            Assert.Equal(1, writeToStream.BytesPending);
             Assert.Equal(0, stream.Position);
             await writeToStream.DisposeAsync();
             Assert.Equal(0, writeToStream.BytesCommitted);
@@ -1970,15 +1948,17 @@ namespace System.Text.Json.Tests
 
         private void ValidateAction(Utf8JsonWriter writer, Action action, bool skipValidation)
         {
+            long originalBytesCommitted = writer.BytesCommitted;
             int originalBytesPending = writer.BytesPending;
             if (skipValidation)
             {
                 action.Invoke();
-                Assert.NotEqual(originalBytesPending, writer.BytesPending);
+                Assert.NotEqual(originalBytesCommitted + originalBytesPending, writer.BytesCommitted + writer.BytesPending);
             }
             else
             {
                 Assert.Throws<InvalidOperationException>(action);
+                Assert.Equal(originalBytesCommitted, writer.BytesCommitted);
                 Assert.Equal(originalBytesPending, writer.BytesPending);
             }
         }
@@ -3582,16 +3562,14 @@ namespace System.Text.Json.Tests
 
             jsonUtf8.WriteStartObject();
 
-            Assert.Equal(0, jsonUtf8.BytesCommitted);
-            Assert.Equal(1, jsonUtf8.BytesPending);
+            Assert.Equal(1, jsonUtf8.BytesCommitted + jsonUtf8.BytesPending);
 
             jsonUtf8.WriteString("message", "Hello, World!");
 
-            Assert.Equal(0, jsonUtf8.BytesCommitted);
             if (formatted)
-                Assert.Equal(26 + 2 + Environment.NewLine.Length + 1, jsonUtf8.BytesPending); // new lines, indentation, white space
+                Assert.Equal(26 + 2 + Environment.NewLine.Length + 1, jsonUtf8.BytesCommitted + jsonUtf8.BytesPending); // new lines, indentation, white space
             else
-                Assert.Equal(26, jsonUtf8.BytesPending);
+                Assert.Equal(26, jsonUtf8.BytesCommitted + jsonUtf8.BytesPending);
 
             jsonUtf8.Flush();
 
@@ -3604,16 +3582,6 @@ namespace System.Text.Json.Tests
 
             jsonUtf8.WriteString("message", "Hello, World!");
             jsonUtf8.WriteEndObject();
-
-            if (formatted)
-                Assert.Equal(26 + 2 + Environment.NewLine.Length + 1, jsonUtf8.BytesCommitted);
-            else
-                Assert.Equal(26, jsonUtf8.BytesCommitted);
-
-            if (formatted)
-                Assert.Equal(27 + 2 + (2 * Environment.NewLine.Length) + 1, jsonUtf8.BytesPending); // new lines, indentation, white space
-            else
-                Assert.Equal(27, jsonUtf8.BytesPending);
 
             jsonUtf8.Flush();
 
@@ -3713,16 +3681,14 @@ namespace System.Text.Json.Tests
 
             jsonUtf8.WriteStartObject();
 
-            Assert.Equal(0, jsonUtf8.BytesCommitted);
-            Assert.Equal(1, jsonUtf8.BytesPending);
+            Assert.Equal(1, jsonUtf8.BytesCommitted + jsonUtf8.BytesPending);
 
             jsonUtf8.WriteBase64String("message", new byte[] { 201, 153, 199 });
 
-            Assert.Equal(0, jsonUtf8.BytesCommitted);
             if (formatted)
-                Assert.Equal(17 + 2 + Environment.NewLine.Length + 1, jsonUtf8.BytesPending); // new lines, indentation, white space
+                Assert.Equal(17 + 2 + Environment.NewLine.Length + 1, jsonUtf8.BytesCommitted + jsonUtf8.BytesPending); // new lines, indentation, white space
             else
-                Assert.Equal(17, jsonUtf8.BytesPending);
+                Assert.Equal(17, jsonUtf8.BytesCommitted + jsonUtf8.BytesPending);
 
             jsonUtf8.Flush();
 
@@ -3735,16 +3701,6 @@ namespace System.Text.Json.Tests
 
             jsonUtf8.WriteBase64String("message", new byte[] { 201, 153, 199 });
             jsonUtf8.WriteEndObject();
-
-            if (formatted)
-                Assert.Equal(17 + 2 + Environment.NewLine.Length + 1, jsonUtf8.BytesCommitted);
-            else
-                Assert.Equal(17, jsonUtf8.BytesCommitted);
-
-            if (formatted)
-                Assert.Equal(18 + 2 + (2 * Environment.NewLine.Length) + 1, jsonUtf8.BytesPending); // new lines, indentation, white space
-            else
-                Assert.Equal(18, jsonUtf8.BytesPending);
 
             jsonUtf8.Flush();
 
@@ -3768,9 +3724,6 @@ namespace System.Text.Json.Tests
             using var jsonUtf8 = new Utf8JsonWriter(output, options);
 
             jsonUtf8.WriteStartObject();
-
-            Assert.Equal(0, jsonUtf8.BytesCommitted);
-            Assert.Equal(1, jsonUtf8.BytesPending);
 
             jsonUtf8.Flush();
 
@@ -3803,9 +3756,6 @@ namespace System.Text.Json.Tests
 
                 jsonUtf8.WriteStartObject();
 
-                Assert.Equal(0, jsonUtf8.BytesCommitted);
-                Assert.Equal(1, jsonUtf8.BytesPending);
-
                 jsonUtf8.Flush();
 
                 Assert.Equal(1, jsonUtf8.BytesCommitted);
@@ -3828,9 +3778,6 @@ namespace System.Text.Json.Tests
                 using var jsonUtf8 = new Utf8JsonWriter(output, options);
 
                 jsonUtf8.WriteStartArray();
-
-                Assert.Equal(0, jsonUtf8.BytesCommitted);
-                Assert.Equal(1, jsonUtf8.BytesPending);
 
                 jsonUtf8.Flush();
 
@@ -4057,10 +4004,6 @@ namespace System.Text.Json.Tests
             jsonUtf8.WriteCommentValue(comment.AsSpan());
 
             jsonUtf8.Flush();
-
-            // Explicitly skipping flushing here
-            var invalidUtf8 = new byte[2] { 0xc3, 0x28 };
-            jsonUtf8.WriteCommentValue(invalidUtf8);
 
             string expectedStr = GetCommentExpectedString(prettyPrint: formatted);
             JsonTestHelper.AssertContents(expectedStr, output);
@@ -5580,7 +5523,6 @@ namespace System.Text.Json.Tests
                 jsonUtf8.WriteNumberValue(value);
                 numberOfElements++;
             }
-            Assert.Equal(currentCapactiy + 4096, output.Capacity);
             jsonUtf8.WriteEndArray();
             jsonUtf8.Flush();
 
@@ -5609,7 +5551,6 @@ namespace System.Text.Json.Tests
                 jsonUtf8.WriteNumberValue(value);
                 numberOfElements++;
             }
-            Assert.Equal(currentCapactiy + 4096, output.Capacity);
             jsonUtf8.WriteEndArray();
             jsonUtf8.Flush();
 
@@ -5638,7 +5579,6 @@ namespace System.Text.Json.Tests
                 jsonUtf8.WriteNumberValue(value);
                 numberOfElements++;
             }
-            Assert.Equal(currentCapactiy + 4096, output.Capacity);
             jsonUtf8.WriteEndArray();
             jsonUtf8.Flush();
 
@@ -5667,7 +5607,6 @@ namespace System.Text.Json.Tests
                 jsonUtf8.WriteNumberValue(value);
                 numberOfElements++;
             }
-            Assert.Equal(currentCapactiy + 4096, output.Capacity);
             jsonUtf8.WriteEndArray();
             jsonUtf8.Flush();
 
@@ -5699,7 +5638,6 @@ namespace System.Text.Json.Tests
                 jsonUtf8.WriteNumberValue(value);
                 numberOfElements++;
             }
-            Assert.Equal(currentCapactiy + 4096, output.Capacity);
             jsonUtf8.WriteEndArray();
             jsonUtf8.Flush();
 
@@ -5731,7 +5669,6 @@ namespace System.Text.Json.Tests
                 jsonUtf8.WriteNumberValue(value);
                 numberOfElements++;
             }
-            Assert.Equal(currentCapactiy + 4096, output.Capacity);
             jsonUtf8.WriteEndArray();
             jsonUtf8.Flush();
 
@@ -5760,7 +5697,6 @@ namespace System.Text.Json.Tests
                 jsonUtf8.WriteNumberValue(value);
                 numberOfElements++;
             }
-            Assert.Equal(currentCapactiy + 4096, output.Capacity);
             jsonUtf8.WriteEndArray();
             jsonUtf8.Flush();
 

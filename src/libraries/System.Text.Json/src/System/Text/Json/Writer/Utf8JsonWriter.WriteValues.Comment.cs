@@ -71,23 +71,21 @@ namespace System.Text.Json
             // Optionally, up to 3x growth when transcoding
             int maxRequired = (value.Length * JsonConstants.MaxExpansionFactorWhileTranscoding) + 4;
 
-            if (_memory.Length - BytesPending < maxRequired)
-            {
-                Grow(maxRequired);
-            }
+            Span<byte> output = _output.GetSpan(maxRequired);
+            int bytesPending = 0;
 
-            Span<byte> output = _memory.Span;
-
-            output[BytesPending++] = JsonConstants.Slash;
-            output[BytesPending++] = JsonConstants.Asterisk;
+            output[bytesPending++] = JsonConstants.Slash;
+            output[bytesPending++] = JsonConstants.Asterisk;
 
             ReadOnlySpan<byte> byteSpan = MemoryMarshal.AsBytes(value);
-            OperationStatus status = JsonWriterHelper.ToUtf8(byteSpan, output.Slice(BytesPending), out int _, out int written);
+            OperationStatus status = JsonWriterHelper.ToUtf8(byteSpan, output.Slice(bytesPending), out int _, out int written);
             Debug.Assert(status != OperationStatus.DestinationTooSmall);
-            BytesPending += written;
+            bytesPending += written;
 
-            output[BytesPending++] = JsonConstants.Asterisk;
-            output[BytesPending++] = JsonConstants.Slash;
+            output[bytesPending++] = JsonConstants.Asterisk;
+            output[bytesPending++] = JsonConstants.Slash;
+            _bytesAdvanced += bytesPending;
+            _output.Advance(bytesPending);
         }
 
         private void WriteCommentIndented(ReadOnlySpan<char> value)
@@ -101,31 +99,29 @@ namespace System.Text.Json
             // Optionally, 1-2 bytes for new line, and up to 3x growth when transcoding
             int maxRequired = indent + (value.Length * JsonConstants.MaxExpansionFactorWhileTranscoding) + 4 + s_newLineLength;
 
-            if (_memory.Length - BytesPending < maxRequired)
-            {
-                Grow(maxRequired);
-            }
-
-            Span<byte> output = _memory.Span;
+            Span<byte> output = _output.GetSpan(maxRequired);
+            int bytesPending = 0;
 
             if (_tokenType != JsonTokenType.None)
             {
-                WriteNewLine(output);
+                bytesPending += WriteNewLine(output.Slice(bytesPending));
             }
 
-            JsonWriterHelper.WriteIndentation(output.Slice(BytesPending), indent);
-            BytesPending += indent;
+            JsonWriterHelper.WriteIndentation(output.Slice(bytesPending), indent);
+            bytesPending += indent;
 
-            output[BytesPending++] = JsonConstants.Slash;
-            output[BytesPending++] = JsonConstants.Asterisk;
+            output[bytesPending++] = JsonConstants.Slash;
+            output[bytesPending++] = JsonConstants.Asterisk;
 
             ReadOnlySpan<byte> byteSpan = MemoryMarshal.AsBytes(value);
-            OperationStatus status = JsonWriterHelper.ToUtf8(byteSpan, output.Slice(BytesPending), out int _, out int written);
+            OperationStatus status = JsonWriterHelper.ToUtf8(byteSpan, output.Slice(bytesPending), out int _, out int written);
             Debug.Assert(status != OperationStatus.DestinationTooSmall);
-            BytesPending += written;
+            bytesPending += written;
 
-            output[BytesPending++] = JsonConstants.Asterisk;
-            output[BytesPending++] = JsonConstants.Slash;
+            output[bytesPending++] = JsonConstants.Asterisk;
+            output[bytesPending++] = JsonConstants.Slash;
+            _bytesAdvanced += bytesPending;
+            _output.Advance(bytesPending);
         }
 
         /// <summary>
@@ -168,21 +164,19 @@ namespace System.Text.Json
 
             int maxRequired = utf8Value.Length + 4; // /*...*/
 
-            if (_memory.Length - BytesPending < maxRequired)
-            {
-                Grow(maxRequired);
-            }
+            Span<byte> output = _output.GetSpan(maxRequired);
+            int bytesPending = 0;
 
-            Span<byte> output = _memory.Span;
+            output[bytesPending++] = JsonConstants.Slash;
+            output[bytesPending++] = JsonConstants.Asterisk;
 
-            output[BytesPending++] = JsonConstants.Slash;
-            output[BytesPending++] = JsonConstants.Asterisk;
+            utf8Value.CopyTo(output.Slice(bytesPending));
+            bytesPending += utf8Value.Length;
 
-            utf8Value.CopyTo(output.Slice(BytesPending));
-            BytesPending += utf8Value.Length;
-
-            output[BytesPending++] = JsonConstants.Asterisk;
-            output[BytesPending++] = JsonConstants.Slash;
+            output[bytesPending++] = JsonConstants.Asterisk;
+            output[bytesPending++] = JsonConstants.Slash;
+            _bytesAdvanced += bytesPending;
+            _output.Advance(bytesPending);
         }
 
         private void WriteCommentIndented(ReadOnlySpan<byte> utf8Value)
@@ -195,31 +189,29 @@ namespace System.Text.Json
             int minRequired = indent + utf8Value.Length + 4; // /*...*/
             int maxRequired = minRequired + s_newLineLength; // Optionally, 1-2 bytes for new line
 
-            if (_memory.Length - BytesPending < maxRequired)
-            {
-                Grow(maxRequired);
-            }
-
-            Span<byte> output = _memory.Span;
+            Span<byte> output = _output.GetSpan(maxRequired);
+            int bytesPending = 0;
 
             if (_tokenType != JsonTokenType.PropertyName)
             {
                 if (_tokenType != JsonTokenType.None)
                 {
-                    WriteNewLine(output);
+                    bytesPending += WriteNewLine(output.Slice(bytesPending));
                 }
-                JsonWriterHelper.WriteIndentation(output.Slice(BytesPending), indent);
-                BytesPending += indent;
+                JsonWriterHelper.WriteIndentation(output.Slice(bytesPending), indent);
+                bytesPending += indent;
             }
 
-            output[BytesPending++] = JsonConstants.Slash;
-            output[BytesPending++] = JsonConstants.Asterisk;
+            output[bytesPending++] = JsonConstants.Slash;
+            output[bytesPending++] = JsonConstants.Asterisk;
 
-            utf8Value.CopyTo(output.Slice(BytesPending));
-            BytesPending += utf8Value.Length;
+            utf8Value.CopyTo(output.Slice(bytesPending));
+            bytesPending += utf8Value.Length;
 
-            output[BytesPending++] = JsonConstants.Asterisk;
-            output[BytesPending++] = JsonConstants.Slash;
+            output[bytesPending++] = JsonConstants.Asterisk;
+            output[bytesPending++] = JsonConstants.Slash;
+            _bytesAdvanced += bytesPending;
+            _output.Advance(bytesPending);
         }
     }
 }

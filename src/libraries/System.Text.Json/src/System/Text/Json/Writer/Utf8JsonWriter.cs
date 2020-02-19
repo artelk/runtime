@@ -38,14 +38,9 @@ namespace System.Text.Json
         // Depending on OS, either '\r\n' OR '\n'
         private static readonly int s_newLineLength = Environment.NewLine.Length;
 
-        private const int DefaultGrowthSize = 4096;
-        private const int InitialGrowthSize = 256;
-
-        private IBufferWriter<byte>? _output;
+        private BufferWriter _output;
         private Stream? _stream;
         private ArrayBufferWriter<byte>? _arrayBufferWriter;
-
-        private Memory<byte> _memory;
 
         private bool _inObject;
         private JsonTokenType _tokenType;
@@ -58,11 +53,14 @@ namespace System.Text.Json
 
         private JsonWriterOptions _options; // Since JsonWriterOptions is a struct, use a field to avoid a copy for internal code.
 
+        private int _bytesFlushedToStream;
+        private int _bytesAdvanced;
+
         /// <summary>
         /// Returns the amount of bytes written by the <see cref="Utf8JsonWriter"/> so far
         /// that have not yet been flushed to the output and committed.
         /// </summary>
-        public int BytesPending { get; private set; }
+        public int BytesPending => _stream == null ? 0 : _bytesAdvanced;
 
         /// <summary>
         /// Returns the amount of bytes committed to the output by the <see cref="Utf8JsonWriter"/> so far.
@@ -71,7 +69,7 @@ namespace System.Text.Json
         /// In the case of IBufferwriter, this is how much the IBufferWriter has advanced.
         /// In the case of Stream, this is how much data has been written to the stream.
         /// </remarks>
-        public long BytesCommitted { get; private set; }
+        public long BytesCommitted => _stream == null ? _bytesAdvanced : _bytesFlushedToStream;
 
         /// <summary>
         /// Gets the custom behavior when writing JSON using
@@ -106,13 +104,9 @@ namespace System.Text.Json
         /// </exception>
         public Utf8JsonWriter(IBufferWriter<byte> bufferWriter, JsonWriterOptions options = default)
         {
-            _output = bufferWriter ?? throw new ArgumentNullException(nameof(bufferWriter));
+            _output = new BufferWriter(bufferWriter);
             _stream = default;
             _arrayBufferWriter = default;
-
-            BytesPending = default;
-            BytesCommitted = default;
-            _memory = default;
 
             _inObject = default;
             _tokenType = default;
@@ -143,11 +137,7 @@ namespace System.Text.Json
 
             _stream = utf8Json;
             _arrayBufferWriter = new ArrayBufferWriter<byte>();
-            _output = default;
-
-            BytesPending = default;
-            BytesCommitted = default;
-            _memory = default;
+            _output = new BufferWriter(_arrayBufferWriter);
 
             _inObject = default;
             _tokenType = default;
@@ -204,12 +194,12 @@ namespace System.Text.Json
             if (_arrayBufferWriter == null)
             {
                 _arrayBufferWriter = new ArrayBufferWriter<byte>();
+                _output = new BufferWriter(_arrayBufferWriter);
             }
             else
             {
                 _arrayBufferWriter.Clear();
             }
-            _output = null;
 
             ResetHelper();
         }
@@ -232,7 +222,7 @@ namespace System.Text.Json
         {
             CheckNotDisposed();
 
-            _output = bufferWriter ?? throw new ArgumentNullException(nameof(bufferWriter));
+            _output = new BufferWriter(bufferWriter);
             _stream = null;
             _arrayBufferWriter = null;
 
@@ -241,9 +231,8 @@ namespace System.Text.Json
 
         private void ResetHelper()
         {
-            BytesPending = default;
-            BytesCommitted = default;
-            _memory = default;
+            _bytesAdvanced = default;
+            _bytesFlushedToStream = default;
 
             _inObject = default;
             _tokenType = default;
@@ -259,7 +248,7 @@ namespace System.Text.Json
             if (_stream == null)
             {
                 // The conditions are ordered with stream first as that would be the most common mode
-                if (_output == null)
+                if (_output == default)
                 {
                     throw new ObjectDisposedException(nameof(Utf8JsonWriter));
                 }
@@ -280,16 +269,11 @@ namespace System.Text.Json
         {
             CheckNotDisposed();
 
-            _memory = default;
-
             if (_stream != null)
             {
                 Debug.Assert(_arrayBufferWriter != null);
-                if (BytesPending != 0)
+                if (_bytesAdvanced != 0)
                 {
-                    _arrayBufferWriter.Advance(BytesPending);
-                    BytesPending = 0;
-
 #if BUILDING_INBOX_LIBRARY
                     _stream.Write(_arrayBufferWriter.WrittenSpan);
 #else
@@ -301,20 +285,11 @@ namespace System.Text.Json
                     _stream.Write(underlyingBuffer.Array, underlyingBuffer.Offset, underlyingBuffer.Count);
 #endif
 
-                    BytesCommitted += _arrayBufferWriter.WrittenCount;
+                    _bytesAdvanced = 0;
+                    _bytesFlushedToStream += _arrayBufferWriter.WrittenCount;
                     _arrayBufferWriter.Clear();
                 }
                 _stream.Flush();
-            }
-            else
-            {
-                Debug.Assert(_output != null);
-                if (BytesPending != 0)
-                {
-                    _output.Advance(BytesPending);
-                    BytesCommitted += BytesPending;
-                    BytesPending = 0;
-                }
             }
         }
 
@@ -335,7 +310,7 @@ namespace System.Text.Json
             if (_stream == null)
             {
                 // The conditions are ordered with stream first as that would be the most common mode
-                if (_output == null)
+                if (_output == default)
                 {
                     return;
                 }
@@ -346,7 +321,7 @@ namespace System.Text.Json
 
             _stream = null;
             _arrayBufferWriter = null;
-            _output = null;
+            _output = default;
         }
 
         /// <summary>
@@ -366,7 +341,7 @@ namespace System.Text.Json
             if (_stream == null)
             {
                 // The conditions are ordered with stream first as that would be the most common mode
-                if (_output == null)
+                if (_output == default)
                 {
                     return;
                 }
@@ -377,7 +352,7 @@ namespace System.Text.Json
 
             _stream = null;
             _arrayBufferWriter = null;
-            _output = null;
+            _output = default;
         }
 
         /// <summary>
@@ -394,15 +369,11 @@ namespace System.Text.Json
         {
             CheckNotDisposed();
 
-            _memory = default;
-
             if (_stream != null)
             {
                 Debug.Assert(_arrayBufferWriter != null);
-                if (BytesPending != 0)
+                if (_bytesAdvanced != 0)
                 {
-                    _arrayBufferWriter.Advance(BytesPending);
-                    BytesPending = 0;
 
 #if BUILDING_INBOX_LIBRARY
                     await _stream.WriteAsync(_arrayBufferWriter.WrittenMemory, cancellationToken).ConfigureAwait(false);
@@ -415,20 +386,11 @@ namespace System.Text.Json
                     await _stream.WriteAsync(underlyingBuffer.Array, underlyingBuffer.Offset, underlyingBuffer.Count, cancellationToken).ConfigureAwait(false);
 #endif
 
-                    BytesCommitted += _arrayBufferWriter.WrittenCount;
+                    _bytesAdvanced = 0;
+                    _bytesFlushedToStream += _arrayBufferWriter.WrittenCount;
                     _arrayBufferWriter.Clear();
                 }
                 await _stream.FlushAsync(cancellationToken).ConfigureAwait(false);
-            }
-            else
-            {
-                Debug.Assert(_output != null);
-                if (BytesPending != 0)
-                {
-                    _output.Advance(BytesPending);
-                    BytesCommitted += BytesPending;
-                    BytesPending = 0;
-                }
             }
         }
 
@@ -478,17 +440,15 @@ namespace System.Text.Json
 
         private void WriteStartMinimized(byte token)
         {
-            if (_memory.Length - BytesPending < 2)  // 1 start token, and optionally, 1 list separator
-            {
-                Grow(2);
-            }
-
-            Span<byte> output = _memory.Span;
+            Span<byte> output = _output.GetSpan(2);  // 1 start token, and optionally, 1 list separator
+            int bytesPending = 0;
             if (_currentDepth < 0)
             {
-                output[BytesPending++] = JsonConstants.ListSeparator;
+                output[bytesPending++] = JsonConstants.ListSeparator;
             }
-            output[BytesPending++] = token;
+            output[bytesPending++] = token;
+            _output.Advance(bytesPending);
+            _bytesAdvanced += bytesPending;
         }
 
         private void WriteStartSlow(byte token)
@@ -544,29 +504,27 @@ namespace System.Text.Json
             int minRequired = indent + 1;   // 1 start token
             int maxRequired = minRequired + 3; // Optionally, 1 list separator and 1-2 bytes for new line
 
-            if (_memory.Length - BytesPending < maxRequired)
-            {
-                Grow(maxRequired);
-            }
-
-            Span<byte> output = _memory.Span;
+            Span<byte> output = _output.GetSpan(maxRequired);
+            int bytesPending = 0;
 
             if (_currentDepth < 0)
             {
-                output[BytesPending++] = JsonConstants.ListSeparator;
+                output[bytesPending++] = JsonConstants.ListSeparator;
             }
 
             if (_tokenType != JsonTokenType.PropertyName)
             {
                 if (_tokenType != JsonTokenType.None)
                 {
-                    WriteNewLine(output);
+                    bytesPending += WriteNewLine(output.Slice(bytesPending));
                 }
-                JsonWriterHelper.WriteIndentation(output.Slice(BytesPending), indent);
-                BytesPending += indent;
+                JsonWriterHelper.WriteIndentation(output.Slice(bytesPending), indent);
+                bytesPending += indent;
             }
 
-            output[BytesPending++] = token;
+            output[bytesPending++] = token;
+            _bytesAdvanced += bytesPending;
+            _output.Advance(bytesPending);
         }
 
         /// <summary>
@@ -900,13 +858,10 @@ namespace System.Text.Json
 
         private void WriteEndMinimized(byte token)
         {
-            if (_memory.Length - BytesPending < 1) // 1 end token
-            {
-                Grow(1);
-            }
-
-            Span<byte> output = _memory.Span;
-            output[BytesPending++] = token;
+            Span<byte> output = _output.GetSpan(1); // 1 end token
+            output[0] = token;
+            _bytesAdvanced++;
+            _output.Advance(1);
         }
 
         private void WriteEndSlow(byte token)
@@ -979,31 +934,29 @@ namespace System.Text.Json
 
                 int maxRequired = indent + 3; // 1 end token, 1-2 bytes for new line
 
-                if (_memory.Length - BytesPending < maxRequired)
-                {
-                    Grow(maxRequired);
-                }
+                Span<byte> output = _output.GetSpan(maxRequired);
+                int bytesPending = WriteNewLine(output);
 
-                Span<byte> output = _memory.Span;
+                JsonWriterHelper.WriteIndentation(output.Slice(bytesPending), indent);
+                bytesPending += indent;
 
-                WriteNewLine(output);
-
-                JsonWriterHelper.WriteIndentation(output.Slice(BytesPending), indent);
-                BytesPending += indent;
-
-                output[BytesPending++] = token;
+                output[bytesPending++] = token;
+                _bytesAdvanced += bytesPending;
+                _output.Advance(bytesPending);
             }
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private void WriteNewLine(Span<byte> output)
+        private int WriteNewLine(Span<byte> output)
         {
+            int bytesPending = 0;
             // Write '\r\n' OR '\n', depending on OS
             if (s_newLineLength == 2)
             {
-                output[BytesPending++] = JsonConstants.CarriageReturn;
+                output[bytesPending++] = JsonConstants.CarriageReturn;
             }
-            output[BytesPending++] = JsonConstants.LineFeed;
+            output[bytesPending++] = JsonConstants.LineFeed;
+            return bytesPending;
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -1019,70 +972,6 @@ namespace System.Text.Json
                 Debug.Assert(token == JsonConstants.OpenBrace);
                 _bitStack.PushTrue();
                 _inObject = true;
-            }
-        }
-
-        private void Grow(int requiredSize)
-        {
-            Debug.Assert(requiredSize > 0);
-
-            if (_memory.Length == 0)
-            {
-                FirstCallToGetMemory(requiredSize);
-                return;
-            }
-
-            int sizeHint = Math.Max(DefaultGrowthSize, requiredSize);
-
-            Debug.Assert(BytesPending != 0);
-
-            if (_stream != null)
-            {
-                Debug.Assert(_arrayBufferWriter != null);
-
-                _memory = _arrayBufferWriter.GetMemory(checked(BytesPending + sizeHint));
-
-                Debug.Assert(_memory.Length >= sizeHint);
-            }
-            else
-            {
-                Debug.Assert(_output != null);
-
-                _output.Advance(BytesPending);
-                BytesCommitted += BytesPending;
-                BytesPending = 0;
-
-                _memory = _output.GetMemory(sizeHint);
-
-                if (_memory.Length < sizeHint)
-                {
-                    ThrowHelper.ThrowInvalidOperationException_NeedLargerSpan();
-                }
-            }
-        }
-
-        private void FirstCallToGetMemory(int requiredSize)
-        {
-            Debug.Assert(_memory.Length == 0);
-            Debug.Assert(BytesPending == 0);
-
-            int sizeHint = Math.Max(InitialGrowthSize, requiredSize);
-
-            if (_stream != null)
-            {
-                Debug.Assert(_arrayBufferWriter != null);
-                _memory = _arrayBufferWriter.GetMemory(sizeHint);
-                Debug.Assert(_memory.Length >= sizeHint);
-            }
-            else
-            {
-                Debug.Assert(_output != null);
-                _memory = _output.GetMemory(sizeHint);
-
-                if (_memory.Length < sizeHint)
-                {
-                    ThrowHelper.ThrowInvalidOperationException_NeedLargerSpan();
-                }
             }
         }
 

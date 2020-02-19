@@ -40,21 +40,19 @@ namespace System.Text.Json
         {
             int maxRequired = JsonConstants.MaximumFormatDecimalLength + 1; // Optionally, 1 list separator
 
-            if (_memory.Length - BytesPending < maxRequired)
-            {
-                Grow(maxRequired);
-            }
-
-            Span<byte> output = _memory.Span;
+            Span<byte> output = _output.GetSpan(maxRequired);
+            int bytesPending = 0;
 
             if (_currentDepth < 0)
             {
-                output[BytesPending++] = JsonConstants.ListSeparator;
+                output[bytesPending++] = JsonConstants.ListSeparator;
             }
 
-            bool result = Utf8Formatter.TryFormat(value, output.Slice(BytesPending), out int bytesWritten);
+            bool result = Utf8Formatter.TryFormat(value, output.Slice(bytesPending), out int bytesWritten);
             Debug.Assert(result);
-            BytesPending += bytesWritten;
+            bytesPending += bytesWritten;
+            _bytesAdvanced += bytesPending;
+            _output.Advance(bytesPending);
         }
 
         private void WriteNumberValueIndented(decimal value)
@@ -64,31 +62,29 @@ namespace System.Text.Json
 
             int maxRequired = indent + JsonConstants.MaximumFormatDecimalLength + 1 + s_newLineLength; // Optionally, 1 list separator and 1-2 bytes for new line
 
-            if (_memory.Length - BytesPending < maxRequired)
-            {
-                Grow(maxRequired);
-            }
-
-            Span<byte> output = _memory.Span;
+            Span<byte> output = _output.GetSpan(maxRequired);
+            int bytesPending = 0;
 
             if (_currentDepth < 0)
             {
-                output[BytesPending++] = JsonConstants.ListSeparator;
+                output[bytesPending++] = JsonConstants.ListSeparator;
             }
 
             if (_tokenType != JsonTokenType.PropertyName)
             {
                 if (_tokenType != JsonTokenType.None)
                 {
-                    WriteNewLine(output);
+                    bytesPending += WriteNewLine(output.Slice(bytesPending));
                 }
-                JsonWriterHelper.WriteIndentation(output.Slice(BytesPending), indent);
-                BytesPending += indent;
+                JsonWriterHelper.WriteIndentation(output.Slice(bytesPending), indent);
+                bytesPending += indent;
             }
 
-            bool result = Utf8Formatter.TryFormat(value, output.Slice(BytesPending), out int bytesWritten);
+            bool result = Utf8Formatter.TryFormat(value, output.Slice(bytesPending), out int bytesWritten);
             Debug.Assert(result);
-            BytesPending += bytesWritten;
+            bytesPending += bytesWritten;
+            _bytesAdvanced += bytesPending;
+            _output.Advance(bytesPending);
         }
     }
 }

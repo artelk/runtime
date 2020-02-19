@@ -64,20 +64,18 @@ namespace System.Text.Json
 
             int maxRequired = utf8Value.Length + 1; // Optionally, 1 list separator
 
-            if (_memory.Length - BytesPending < maxRequired)
-            {
-                Grow(maxRequired);
-            }
-
-            Span<byte> output = _memory.Span;
+            Span<byte> output = _output.GetSpan(maxRequired);
+            int bytesPending = 0;
 
             if (_currentDepth < 0)
             {
-                output[BytesPending++] = JsonConstants.ListSeparator;
+                output[bytesPending++] = JsonConstants.ListSeparator;
             }
 
-            utf8Value.CopyTo(output.Slice(BytesPending));
-            BytesPending += utf8Value.Length;
+            utf8Value.CopyTo(output.Slice(bytesPending));
+            bytesPending += utf8Value.Length;
+            _bytesAdvanced += bytesPending;
+            _output.Advance(bytesPending);
         }
 
         private void WriteLiteralIndented(ReadOnlySpan<byte> utf8Value)
@@ -88,30 +86,28 @@ namespace System.Text.Json
 
             int maxRequired = indent + utf8Value.Length + 1 + s_newLineLength; // Optionally, 1 list separator and 1-2 bytes for new line
 
-            if (_memory.Length - BytesPending < maxRequired)
-            {
-                Grow(maxRequired);
-            }
-
-            Span<byte> output = _memory.Span;
+            Span<byte> output = _output.GetSpan(maxRequired);
+            int bytesPending = 0;
 
             if (_currentDepth < 0)
             {
-                output[BytesPending++] = JsonConstants.ListSeparator;
+                output[bytesPending++] = JsonConstants.ListSeparator;
             }
 
             if (_tokenType != JsonTokenType.PropertyName)
             {
                 if (_tokenType != JsonTokenType.None)
                 {
-                    WriteNewLine(output);
+                    bytesPending += WriteNewLine(output.Slice(bytesPending));
                 }
-                JsonWriterHelper.WriteIndentation(output.Slice(BytesPending), indent);
-                BytesPending += indent;
+                JsonWriterHelper.WriteIndentation(output.Slice(bytesPending), indent);
+                bytesPending += indent;
             }
 
-            utf8Value.CopyTo(output.Slice(BytesPending));
-            BytesPending += utf8Value.Length;
+            utf8Value.CopyTo(output.Slice(bytesPending));
+            bytesPending += utf8Value.Length;
+            _bytesAdvanced += bytesPending;
+            _output.Advance(bytesPending);
         }
     }
 }

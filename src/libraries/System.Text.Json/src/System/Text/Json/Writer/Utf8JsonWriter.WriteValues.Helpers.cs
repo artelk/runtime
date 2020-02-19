@@ -37,7 +37,7 @@ namespace System.Text.Json
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private void Base64EncodeAndWrite(ReadOnlySpan<byte> bytes, Span<byte> output, int encodingLength)
+        private int Base64EncodeAndWrite(ReadOnlySpan<byte> bytes, Span<byte> output, int encodingLength)
         {
             byte[]? outputText = null;
 
@@ -50,16 +50,15 @@ namespace System.Text.Json
             Debug.Assert(consumed == bytes.Length);
 
             encodedBytes = encodedBytes.Slice(0, written);
-            Span<byte> destination = output.Slice(BytesPending);
 
-            Debug.Assert(destination.Length >= written);
-            encodedBytes.Slice(0, written).CopyTo(destination);
-            BytesPending += written;
+            Debug.Assert(output.Length >= written);
+            encodedBytes.Slice(0, written).CopyTo(output);
 
             if (outputText != null)
             {
                 ArrayPool<byte>.Shared.Return(outputText);
             }
+            return written;
         }
     }
 }

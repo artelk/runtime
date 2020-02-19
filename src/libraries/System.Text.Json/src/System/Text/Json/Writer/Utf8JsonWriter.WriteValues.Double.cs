@@ -44,21 +44,19 @@ namespace System.Text.Json
         {
             int maxRequired = JsonConstants.MaximumFormatDoubleLength + 1; // Optionally, 1 list separator
 
-            if (_memory.Length - BytesPending < maxRequired)
-            {
-                Grow(maxRequired);
-            }
-
-            Span<byte> output = _memory.Span;
+            Span<byte> output = _output.GetSpan(maxRequired);
+            int bytesPending = 0;
 
             if (_currentDepth < 0)
             {
-                output[BytesPending++] = JsonConstants.ListSeparator;
+                output[bytesPending++] = JsonConstants.ListSeparator;
             }
 
-            bool result = TryFormatDouble(value, output.Slice(BytesPending), out int bytesWritten);
+            bool result = TryFormatDouble(value, output.Slice(bytesPending), out int bytesWritten);
             Debug.Assert(result);
-            BytesPending += bytesWritten;
+            bytesPending += bytesWritten;
+            _bytesAdvanced += bytesPending;
+            _output.Advance(bytesPending);
         }
 
         private void WriteNumberValueIndented(double value)
@@ -68,31 +66,29 @@ namespace System.Text.Json
 
             int maxRequired = indent + JsonConstants.MaximumFormatDoubleLength + 1 + s_newLineLength; // Optionally, 1 list separator and 1-2 bytes for new line
 
-            if (_memory.Length - BytesPending < maxRequired)
-            {
-                Grow(maxRequired);
-            }
-
-            Span<byte> output = _memory.Span;
+            Span<byte> output = _output.GetSpan(maxRequired);
+            int bytesPending = 0;
 
             if (_currentDepth < 0)
             {
-                output[BytesPending++] = JsonConstants.ListSeparator;
+                output[bytesPending++] = JsonConstants.ListSeparator;
             }
 
             if (_tokenType != JsonTokenType.PropertyName)
             {
                 if (_tokenType != JsonTokenType.None)
                 {
-                    WriteNewLine(output);
+                    bytesPending += WriteNewLine(output.Slice(bytesPending));
                 }
-                JsonWriterHelper.WriteIndentation(output.Slice(BytesPending), indent);
-                BytesPending += indent;
+                JsonWriterHelper.WriteIndentation(output.Slice(bytesPending), indent);
+                bytesPending += indent;
             }
 
-            bool result = TryFormatDouble(value, output.Slice(BytesPending), out int bytesWritten);
+            bool result = TryFormatDouble(value, output.Slice(bytesPending), out int bytesWritten);
             Debug.Assert(result);
-            BytesPending += bytesWritten;
+            bytesPending += bytesWritten;
+            _bytesAdvanced += bytesPending;
+            _output.Advance(bytesPending);
         }
 
         private static bool TryFormatDouble(double value, Span<byte> destination, out int bytesWritten)

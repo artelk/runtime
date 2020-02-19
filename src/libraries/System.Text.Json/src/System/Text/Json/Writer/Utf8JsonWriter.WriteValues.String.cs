@@ -120,22 +120,20 @@ namespace System.Text.Json
             // Optionally, 1 list separator, and up to 3x growth when transcoding
             int maxRequired = (escapedValue.Length * JsonConstants.MaxExpansionFactorWhileTranscoding) + 3;
 
-            if (_memory.Length - BytesPending < maxRequired)
-            {
-                Grow(maxRequired);
-            }
-
-            Span<byte> output = _memory.Span;
+            Span<byte> output = _output.GetSpan(maxRequired);
+            int bytesPending = 0;
 
             if (_currentDepth < 0)
             {
-                output[BytesPending++] = JsonConstants.ListSeparator;
+                output[bytesPending++] = JsonConstants.ListSeparator;
             }
-            output[BytesPending++] = JsonConstants.Quote;
+            output[bytesPending++] = JsonConstants.Quote;
 
-            TranscodeAndWrite(escapedValue, output);
+            bytesPending += TranscodeAndWrite(escapedValue, output.Slice(bytesPending));
 
-            output[BytesPending++] = JsonConstants.Quote;
+            output[bytesPending++] = JsonConstants.Quote;
+            _bytesAdvanced += bytesPending;
+            _output.Advance(bytesPending);
         }
 
         // TODO: https://github.com/dotnet/runtime/issues/29293
@@ -150,33 +148,31 @@ namespace System.Text.Json
             // Optionally, 1 list separator, 1-2 bytes for new line, and up to 3x growth when transcoding
             int maxRequired = indent + (escapedValue.Length * JsonConstants.MaxExpansionFactorWhileTranscoding) + 3 + s_newLineLength;
 
-            if (_memory.Length - BytesPending < maxRequired)
-            {
-                Grow(maxRequired);
-            }
-
-            Span<byte> output = _memory.Span;
+            Span<byte> output = _output.GetSpan(maxRequired);
+            int bytesPending = 0;
 
             if (_currentDepth < 0)
             {
-                output[BytesPending++] = JsonConstants.ListSeparator;
+                output[bytesPending++] = JsonConstants.ListSeparator;
             }
 
             if (_tokenType != JsonTokenType.PropertyName)
             {
                 if (_tokenType != JsonTokenType.None)
                 {
-                    WriteNewLine(output);
+                    bytesPending += WriteNewLine(output.Slice(bytesPending));
                 }
-                JsonWriterHelper.WriteIndentation(output.Slice(BytesPending), indent);
-                BytesPending += indent;
+                JsonWriterHelper.WriteIndentation(output.Slice(bytesPending), indent);
+                bytesPending += indent;
             }
 
-            output[BytesPending++] = JsonConstants.Quote;
+            output[bytesPending++] = JsonConstants.Quote;
 
-            TranscodeAndWrite(escapedValue, output);
+            bytesPending += TranscodeAndWrite(escapedValue, output.Slice(bytesPending));
 
-            output[BytesPending++] = JsonConstants.Quote;
+            output[bytesPending++] = JsonConstants.Quote;
+            _bytesAdvanced += bytesPending;
+            _output.Advance(bytesPending);
         }
 
         private void WriteStringEscapeValue(ReadOnlySpan<char> value, int firstEscapeIndexVal)
@@ -262,23 +258,21 @@ namespace System.Text.Json
             int minRequired = escapedValue.Length + 2; // 2 quotes
             int maxRequired = minRequired + 1; // Optionally, 1 list separator
 
-            if (_memory.Length - BytesPending < maxRequired)
-            {
-                Grow(maxRequired);
-            }
-
-            Span<byte> output = _memory.Span;
+            Span<byte> output = _output.GetSpan(maxRequired);
+            int bytesPending = 0;
 
             if (_currentDepth < 0)
             {
-                output[BytesPending++] = JsonConstants.ListSeparator;
+                output[bytesPending++] = JsonConstants.ListSeparator;
             }
-            output[BytesPending++] = JsonConstants.Quote;
+            output[bytesPending++] = JsonConstants.Quote;
 
-            escapedValue.CopyTo(output.Slice(BytesPending));
-            BytesPending += escapedValue.Length;
+            escapedValue.CopyTo(output.Slice(bytesPending));
+            bytesPending += escapedValue.Length;
 
-            output[BytesPending++] = JsonConstants.Quote;
+            output[bytesPending++] = JsonConstants.Quote;
+            _bytesAdvanced += bytesPending;
+            _output.Advance(bytesPending);
         }
 
         // TODO: https://github.com/dotnet/runtime/issues/29293
@@ -292,34 +286,32 @@ namespace System.Text.Json
             int minRequired = indent + escapedValue.Length + 2; // 2 quotes
             int maxRequired = minRequired + 1 + s_newLineLength; // Optionally, 1 list separator and 1-2 bytes for new line
 
-            if (_memory.Length - BytesPending < maxRequired)
-            {
-                Grow(maxRequired);
-            }
-
-            Span<byte> output = _memory.Span;
+            Span<byte> output = _output.GetSpan(maxRequired);
+            int bytesPending = 0;
 
             if (_currentDepth < 0)
             {
-                output[BytesPending++] = JsonConstants.ListSeparator;
+                output[bytesPending++] = JsonConstants.ListSeparator;
             }
 
             if (_tokenType != JsonTokenType.PropertyName)
             {
                 if (_tokenType != JsonTokenType.None)
                 {
-                    WriteNewLine(output);
+                    bytesPending += WriteNewLine(output.Slice(bytesPending));
                 }
-                JsonWriterHelper.WriteIndentation(output.Slice(BytesPending), indent);
-                BytesPending += indent;
+                JsonWriterHelper.WriteIndentation(output.Slice(bytesPending), indent);
+                bytesPending += indent;
             }
 
-            output[BytesPending++] = JsonConstants.Quote;
+            output[bytesPending++] = JsonConstants.Quote;
 
-            escapedValue.CopyTo(output.Slice(BytesPending));
-            BytesPending += escapedValue.Length;
+            escapedValue.CopyTo(output.Slice(bytesPending));
+            bytesPending += escapedValue.Length;
 
-            output[BytesPending++] = JsonConstants.Quote;
+            output[bytesPending++] = JsonConstants.Quote;
+            _bytesAdvanced += bytesPending;
+            _output.Advance(bytesPending);
         }
 
         private void WriteStringEscapeValue(ReadOnlySpan<byte> utf8Value, int firstEscapeIndexVal)
